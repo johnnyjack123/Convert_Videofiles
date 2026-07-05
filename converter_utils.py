@@ -479,7 +479,9 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
                 print(f"No usable encoder found for video codec '{target_video_codec}'.")
                 return None
 
-            hwaccel_args, env_override = _build_hwaccel_args(video_encoder, config.gpu_info, gpu_index)
+            hwaccel_args, env_override = ([], None)
+            if not video_filters:
+                hwaccel_args, env_override = _build_hwaccel_args(video_encoder, config.gpu_info, gpu_index)
             if hwaccel_args:
                 cmd = [cmd[0], *hwaccel_args, *cmd[1:]]
             if env_override is not None:
