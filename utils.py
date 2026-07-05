@@ -1,9 +1,14 @@
 from pathlib import Path
 from file_handler import file_healthcheck, read, update_entries, collect_paths
 from converter import start_ffmpeg
+from globals import VIDEO_CODEC_ALIASES, AUDIO_CODEC_ALIASES, CONTAINER_COMPAT
 import platform
 import shutil
 import subprocess
+
+VIDEO_CODEC_OPTIONS = "/".join(sorted(VIDEO_CODEC_ALIASES.keys()))
+AUDIO_CODEC_OPTIONS = "/".join(sorted(AUDIO_CODEC_ALIASES.keys()))
+CONTAINER_OPTIONS = "/".join(sorted(CONTAINER_COMPAT.keys()))
 
 def print_config():
     config = read()
@@ -38,7 +43,7 @@ def collect_informations():
     while True:
         # --- input folder path ---
         while True:
-            input_folder_path = Path(input("Path to your input folder: "))
+            input_folder_path = Path(input("Path to your input folder [existing folder]: "))
             if not input_folder_path.exists():
                 print("Path not valid")
                 continue
@@ -46,7 +51,7 @@ def collect_informations():
 
         # --- output folder path ---
         while True:
-            output_folder_path = Path(input("Path to your output folder: "))
+            output_folder_path = Path(input("Path to your output folder [created automatically if missing]: "))
             break
 
         if file_healthcheck():
@@ -55,26 +60,26 @@ def collect_informations():
             use_profile = "n"
         if use_profile == "y" or use_profile == "":
             break
-        
+
         # --- resolution_x ---
         while True:
-            resolution_x = input("Output resolution on the x-Axis: ")
+            resolution_x = input("Output resolution on the x-Axis [e.g. 1920]: ")
             resolution_x = validate_int(resolution_x)
             if not resolution_x:
                 continue
             break
-        
+
         # --- resolution_y ----
         while True:
-            resolution_y = input("Output resolution on the y-Axis: ")
+            resolution_y = input("Output resolution on the y-Axis [e.g. 1080]: ")
             resolution_y = validate_int(resolution_y)
             if not resolution_y:
                 continue
             break
-        
+
         # --- video_quality ---
         while True:
-            video_quality = input("Video quality (choose between 0 and 51, the lower, the better): ")
+            video_quality = input("Video quality [0-51, the lower, the better]: ")
             video_quality = validate_int(video_quality)
             if not video_quality:
                 continue
@@ -82,7 +87,7 @@ def collect_informations():
 
         # --- output_fps ---
         while True:
-            output_fps = input("Output FPS of the video, leave empty to take the same fps like the source: ")
+            output_fps = input("Output FPS of the video [e.g. 30, leave empty to take the same fps like the source]: ")
             if output_fps:
                 output_fps = validate_int(output_fps)
                 if not output_fps:
@@ -90,40 +95,45 @@ def collect_informations():
             else:
                 output_fps = 0
             break
-        
+
         # --- video_codec ---
         while True:
-            video_codec = input("Video codec [h264/h265]: ")
-            if not video_codec:
-                print("Inavlid input.")
+            video_codec = input(f"Video codec [{VIDEO_CODEC_OPTIONS}]: ").strip().lower()
+            normalized_video_codec = VIDEO_CODEC_ALIASES.get(video_codec)
+            if normalized_video_codec is None:
+                print("Invalid input.")
                 continue
-            if not video_codec == "h264" and not video_codec == "h265":
-                print("Inavlid input.")
-                continue
+            video_codec = normalized_video_codec
             break
 
         # --- audio_codec ---
         while True:
-            audio_codec = input("Audio codec: ")
-            if not audio_codec:
-                print("Inavlid input.")
+            audio_codec = input(f"Audio codec [{AUDIO_CODEC_OPTIONS}]: ").strip().lower()
+            normalized_audio_codec = AUDIO_CODEC_ALIASES.get(audio_codec)
+            if normalized_audio_codec is None:
+                print("Invalid input.")
                 continue
+            audio_codec = normalized_audio_codec
             break
-        
+
         # --- input_video_containers ---
         while True:
-            input_video_containers = input("Video containers which are going to re-encode, you can choose severeal containers separated by a , [e.g. mp4,mov]: ")
+            input_video_containers = input(f"Video containers which are going to re-encode, you can choose several containers separated by a , [{CONTAINER_OPTIONS}]: ")
             if not input_video_containers:
-                print("Inavlid input.")
+                print("Invalid input.")
                 continue
-            containers = [x.strip() for x in input_video_containers.split(",")]
+            containers = [x.strip().lower().lstrip(".") for x in input_video_containers.split(",")]
+            invalid_containers = [c for c in containers if c not in CONTAINER_COMPAT]
+            if invalid_containers:
+                print(f"Invalid container(s): {', '.join(invalid_containers)}. Choose from: {CONTAINER_OPTIONS}")
+                continue
             break
 
         # --- output_video_container ---
         while True:
-            output_video_container = input("Output video container: ")
-            if not output_video_container:
-                print("Inavlid input.")
+            output_video_container = input(f"Output video container [{CONTAINER_OPTIONS}]: ").strip().lower().lstrip(".")
+            if output_video_container not in CONTAINER_COMPAT:
+                print(f"Invalid container. Choose from: {CONTAINER_OPTIONS}")
                 continue
             break
 
@@ -133,7 +143,7 @@ def collect_informations():
             if use_gpu:
                 result = validate_bool(use_gpu)
                 if not result:
-                    print("Inavlid input.")
+                    print("Invalid input.")
                     continue
                 if use_gpu == "y":
                     use_gpu = True
