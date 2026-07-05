@@ -51,14 +51,14 @@ def update_entries(entries):
 
 def file_healthcheck():
     config = read()
-    if config.resolution_x and config.resolution_y and config.quality and config.input_video_containers and config.output_video_container and config.video_codec and config.audio_codec and config.output_fps and config.use_gpu and config.gpu_index:
+    if config.resolution_x and config.resolution_y and config.video_quality and config.input_video_containers and config.output_video_container and config.video_codec and config.audio_codec:
         return True
     else:
         return False
-    
+
 def collect_paths(folder_path):
     print("Collect paths.")
-    input_video_containers = read().input_video_containers
+    input_video_containers = [c.lower().lstrip(".") for c in read().input_video_containers]
 
-    video_queue = [p for p in folder_path.rglob("*") if p.is_file() and p.suffix.lower() in input_video_containers]
+    video_queue = [p for p in folder_path.rglob("*") if p.is_file() and p.suffix.lower().lstrip(".") in input_video_containers]
     return video_queue

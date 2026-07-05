@@ -108,7 +108,7 @@ def to_namespace(data):
 
 def _run_command(cmd: list[str]) -> str | None:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
         if result.returncode != 0:
             print(f"Command failed: {' '.join(cmd)}")
             if result.stderr.strip():
@@ -398,23 +398,21 @@ def _pick_audio_encoder(audio_codec: str) -> str | None:
 
 def _build_hwaccel_args(video_encoder: str, gpu_info, gpu_index: int | None) -> tuple[list[str], dict | None]:
     system = platform.system().lower()
-    selected_gpu = _selected_gpu_entry(gpu_info, gpu_index)
-    if selected_gpu is None:
-        return [], None
+    vendor = str(getattr(gpu_info, "vendor", "cpu")).lower()
 
-    vendor = selected_gpu.vendor if hasattr(selected_gpu, "vendor") else selected_gpu.get("vendor")
-    index = selected_gpu.index if hasattr(selected_gpu, "index") else selected_gpu.get("index")
+    if gpu_index is None or gpu_index < 0:
+        return [], None
 
     if vendor == "nvidia":
         env = None
-        if system == "linux" and index is not None:
+        if system == "linux":
             env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = str(index)
+            env["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
         return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"], env
 
     if vendor == "amd":
-        if system == "windows" and index is not None:
-            return ["-init_hw_device", f"d3d11va=hw:{index}", "-filter_hw_device", "hw"], None
+        if system == "windows":
+            return ["-init_hw_device", f"d3d11va=hw:{gpu_index}", "-filter_hw_device", "hw"], None
         return [], None
 
     return [], None
@@ -490,9 +488,9 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
             cmd += ["-c:v", video_encoder]
 
             if video_encoder in {"libx264", "libx265"}:
-                cmd += ["-crf", str(config.quality), "-preset", "medium"]
+                cmd += ["-crf", str(config.video_quality), "-preset", "medium"]
             elif video_encoder in {"h264_nvenc", "hevc_nvenc"}:
-                cmd += ["-cq", str(config.quality), "-preset", "p5"]
+                cmd += ["-cq", str(config.video_quality), "-preset", "p5"]
             elif video_encoder in {"h264_amf", "hevc_amf"}:
                 cmd += ["-quality", "quality"]
 
@@ -557,6 +555,8 @@ def run_ffmpeg_with_progress(cmd, input_path, env=None):
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
@@ -585,6 +585,8 @@ def run_ffmpeg_with_progress(cmd, input_path, env=None):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
         env=env,
     )

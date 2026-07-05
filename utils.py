@@ -10,13 +10,13 @@ def print_config():
     print(config.model_dump_json(indent=4))
     return
 
-def process_queue(video_queue, output_folder_path):
+def process_queue(video_queue, input_folder_path, output_folder_path):
     config = read()
     videos = len(video_queue)
     count = 1
     for input_file_path in video_queue:
         print(f"Video {count} of {videos}.")
-        start_ffmpeg(input_file_path, output_folder_path, config)
+        start_ffmpeg(input_file_path, input_folder_path, output_folder_path, config)
         count = count + 1
     return
 
@@ -39,24 +39,21 @@ def collect_informations():
         # --- input folder path ---
         while True:
             input_folder_path = Path(input("Path to your input folder: "))
-            if not input_folder_path.exists:
+            if not input_folder_path.exists():
                 print("Path not valid")
                 continue
             break
-        
+
         # --- output folder path ---
         while True:
             output_folder_path = Path(input("Path to your output folder: "))
-            if not output_folder_path.exists:
-                print("Path not valid")
-                continue
             break
-        
+
         if file_healthcheck():
-            use_profile = input("Use last used settings? [Y/n]: ")
+            use_profile = input("Use last used settings? [Y/n]: ").strip().lower()
         else:
             use_profile = "n"
-        if use_profile == "Y" or use_profile == "":
+        if use_profile == "y" or use_profile == "":
             break
         
         # --- resolution_x ---
@@ -170,6 +167,8 @@ def detect_gpu_vendor() -> dict:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False
             )
             if result.returncode != 0:
