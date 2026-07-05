@@ -1,4 +1,4 @@
-from file_handler import check_file, update_entries, collect_paths
+from file_handler import check_file, update_entries, collect_paths, read, GPUInfo
 import argparse
 from utils import collect_informations, detect_gpu_vendor, process_queue, print_config
 
@@ -16,8 +16,36 @@ def parse_arguments():
     return args
 
 def setup_gpu():
-    gpu_info = detect_gpu_vendor()
-    update_entries([{"gpu_info": gpu_info}])
+    config = read()
+    if config.gpu_index == -1:
+        gpu_info = detect_gpu_vendor()
+        gpu_list = gpu_info["gpu_names"]
+        gpu_number = len(gpu_list)
+        if gpu_number > 1:
+            print(f"{gpu_number} GPUs found:")
+            x = 1
+            while x <= gpu_number:
+                print(f"[{x}] {gpu_list[(x-1)]}")
+                x = x+1
+            while True:
+                gpu_index = input("Select GPU by index: ")
+                try:
+                    gpu_index = int(gpu_index) - 1
+                except Exception as e:
+                    print(f"Invalid input: {e}")
+                    continue
+                if gpu_index < 0 or gpu_index > gpu_number - 1:
+                    print(f"Invalid input: select a number between 1 and {gpu_number}.")
+                    continue
+                break
+            update_entries({"gpu_index": gpu_index})
+        else:
+            gpu_index = 0
+        gpu_info_model = GPUInfo.model_validate(gpu_info)
+        update_entries({"gpu_info": gpu_info_model})
+        
+        config = read()
+        print(f"GPU set to: {config.gpu_info.gpu_names[gpu_index]}")
     return
 
 def setup_program():

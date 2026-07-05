@@ -1,4 +1,5 @@
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -154,6 +155,22 @@ def _optional_int(value) -> int | None:
 
 
 
+def _build_gpu_entries(raw_names: list[str]) -> list[dict]:
+    entries = []
+    for index, name in enumerate(raw_names):
+        lower = name.lower()
+        vendor = "other"
+        if "nvidia" in lower:
+            vendor = "nvidia"
+        elif "amd" in lower or "radeon" in lower:
+            vendor = "amd"
+        elif "intel" in lower:
+            vendor = "intel"
+        entries.append({"index": index, "name": name, "vendor": vendor})
+    return entries
+
+
+
 def detect_gpu_info() -> dict:
     def get_gpu_names() -> list[str]:
         system = platform.system().lower()
@@ -204,38 +221,61 @@ def detect_gpu_info() -> dict:
         ])
 
     gpu_names = get_gpu_names()
-    if not gpu_names:
+    gpu_entries = _build_gpu_entries(gpu_names)
+
+    if not gpu_entries:
         print("No GPU information could be detected.")
-        return {"vendor": "cpu", "gpu_names": []}
+        return {
+            "vendor": "cpu",
+            "gpu_names": [],
+            "gpus": [],
+            "selected_index": None,
+        }
 
     print("Detected GPUs:")
-    for gpu in gpu_names:
-        print(f" - {gpu}")
-
-    normalized = [gpu.lower() for gpu in gpu_names]
-    has_nvidia_gpu = any("nvidia" in gpu for gpu in normalized)
-    has_amd_gpu = any("amd" in gpu or "radeon" in gpu for gpu in normalized)
+    for gpu in gpu_entries:
+        print(f" - [{gpu['index']}] {gpu['name']}")
 
     if not ffmpeg_exists():
         print("Falling back to CPU because ffmpeg is unavailable.")
-        return {"vendor": "cpu", "gpu_names": gpu_names}
+        return {
+            "vendor": "cpu",
+            "gpu_names": [gpu["name"] for gpu in gpu_entries],
+            "gpus": gpu_entries,
+            "selected_index": None,
+        }
 
     if not ffmpeg_has_any_gpu_support():
         print("ffmpeg does not appear to have NVIDIA NVENC or AMD AMF support.")
         print("Falling back to CPU.")
-        return {"vendor": "cpu", "gpu_names": gpu_names}
+        return {
+            "vendor": "cpu",
+            "gpu_names": [gpu["name"] for gpu in gpu_entries],
+            "gpus": gpu_entries,
+            "selected_index": None,
+        }
 
-    if has_nvidia_gpu:
-        print("NVIDIA GPU detected.")
-        return {"vendor": "nvidia", "gpu_names": gpu_names}
+    selected = next((gpu for gpu in gpu_entries if gpu["vendor"] == "nvidia"), None)
+    if selected is None:
+        selected = next((gpu for gpu in gpu_entries if gpu["vendor"] == "amd"), None)
 
-    if has_amd_gpu:
-        print("AMD GPU detected.")
-        return {"vendor": "amd", "gpu_names": gpu_names}
+    if selected is None:
+        print("No supported NVIDIA or AMD GPU was detected.")
+        print("Falling back to CPU.")
+        return {
+            "vendor": "cpu",
+            "gpu_names": [gpu["name"] for gpu in gpu_entries],
+            "gpus": gpu_entries,
+            "selected_index": None,
+        }
 
-    print("No supported NVIDIA or AMD GPU was detected.")
-    print("Falling back to CPU.")
-    return {"vendor": "cpu", "gpu_names": gpu_names}
+    print(f"Selected GPU: [{selected['index']}] {selected['name']}")
+    return {
+        "vendor": selected["vendor"],
+        "gpu_names": [gpu["name"] for gpu in gpu_entries],
+        "gpus": gpu_entries,
+        "selected_index": selected["index"],
+    }
 
 
 
@@ -308,8 +348,25 @@ def _ffmpeg_has_encoder(name: str) -> bool:
 
 
 
-def _pick_video_encoder(video_codec: str, use_gpu: str, gpu_info) -> str | None:
+def _selected_gpu_entry(gpu_info, gpu_index: int | None):
+    gpus = getattr(gpu_info, "gpus", []) or []
+    if gpu_index is None:
+        gpu_index = _optional_int(getattr(gpu_info, "selected_index", None))
+    if gpu_index is None:
+        return None
+    for gpu in gpus:
+        idx = gpu.index if hasattr(gpu, "index") else gpu.get("index")
+        if idx == gpu_index:
+            return gpu
+    return None
+
+
+
+def _pick_video_encoder(video_codec: str, use_gpu: str, gpu_info, gpu_index: int | None = None) -> str | None:
+    selected_gpu = _selected_gpu_entry(gpu_info, gpu_index)
     vendor = str(getattr(gpu_info, "vendor", "cpu")).lower()
+    if selected_gpu is not None:
+        vendor = selected_gpu.vendor if hasattr(selected_gpu, "vendor") else selected_gpu.get("vendor", vendor)
     use_gpu = str(use_gpu).lower()
 
     if use_gpu in {"false", "0", "no", "off", "cpu"}:
@@ -339,7 +396,32 @@ def _pick_audio_encoder(audio_codec: str) -> str | None:
 
 
 
-def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path) -> list[str] | None:
+def _build_hwaccel_args(video_encoder: str, gpu_info, gpu_index: int | None) -> tuple[list[str], dict | None]:
+    system = platform.system().lower()
+    selected_gpu = _selected_gpu_entry(gpu_info, gpu_index)
+    if selected_gpu is None:
+        return [], None
+
+    vendor = selected_gpu.vendor if hasattr(selected_gpu, "vendor") else selected_gpu.get("vendor")
+    index = selected_gpu.index if hasattr(selected_gpu, "index") else selected_gpu.get("index")
+
+    if vendor == "nvidia":
+        env = None
+        if system == "linux" and index is not None:
+            env = os.environ.copy()
+            env["CUDA_VISIBLE_DEVICES"] = str(index)
+        return ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"], env
+
+    if vendor == "amd":
+        if system == "windows" and index is not None:
+            return ["-init_hw_device", f"d3d11va=hw:{index}", "-filter_hw_device", "hw"], None
+        return [], None
+
+    return [], None
+
+
+
+def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path) -> tuple[list[str], dict | None] | None:
     input_path = Path(input_path)
     output_path = Path(output_path)
 
@@ -359,12 +441,14 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
     target_video_codec = _normalize_video_codec(getattr(config, "video_codec", None))
     target_audio_codec = _normalize_audio_codec(getattr(config, "audio_codec", None))
     target_fps = _optional_int(getattr(config, "output_fps", None))
+    gpu_index = _optional_int(getattr(config, "gpu_index", None))
 
     if target_video_codec is None:
         print("Could not normalize target video codec.")
         return None
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path)]
+    run_env = None
 
     video_filters = []
     video_needs_encode = False
@@ -392,10 +476,16 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
             return None
 
         if video_needs_encode:
-            video_encoder = _pick_video_encoder(target_video_codec, getattr(config, "use_gpu", "auto"), config.gpu_info)
+            video_encoder = _pick_video_encoder(target_video_codec, getattr(config, "use_gpu", "auto"), config.gpu_info, gpu_index)
             if video_encoder is None:
                 print(f"No usable encoder found for video codec '{target_video_codec}'.")
                 return None
+
+            hwaccel_args, env_override = _build_hwaccel_args(video_encoder, config.gpu_info, gpu_index)
+            if hwaccel_args:
+                cmd = [cmd[0], *hwaccel_args, *cmd[1:]]
+            if env_override is not None:
+                run_env = env_override
 
             cmd += ["-c:v", video_encoder]
 
@@ -446,10 +536,11 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
         print("No audio stream found in input file.")
 
     cmd += [str(output_path)]
-    return cmd
+    return cmd, run_env
 
 
-def run_ffmpeg_with_progress(cmd, input_path):
+
+def run_ffmpeg_with_progress(cmd, input_path, env=None):
     input_path = Path(input_path)
 
     if shutil.which("ffprobe") is None:
@@ -495,6 +586,7 @@ def run_ffmpeg_with_progress(cmd, input_path):
         stderr=subprocess.PIPE,
         text=True,
         bufsize=1,
+        env=env,
     )
 
     progress_data = {}
@@ -517,9 +609,9 @@ def run_ffmpeg_with_progress(cmd, input_path):
                 percent = min((current_seconds / total_seconds) * 100, 100.0)
 
             print(
-                f\"Progress: {percent:6.2f}% | "
+                f"Progress: {percent:6.2f}% | "
                 f"Processed: {current_seconds:8.2f}s / {total_seconds:.2f}s | "
-                f"Speed: {speed}\"
+                f"Speed: {speed}"
             )
 
             if value == "end":

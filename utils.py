@@ -7,7 +7,7 @@ import subprocess
 
 def print_config():
     config = read()
-    print(f"Config: \n {config}")
+    print(config.model_dump_json(indent=4))
     return
 
 def process_queue(video_queue, output_folder_path):
@@ -59,21 +59,11 @@ def collect_informations():
         if use_profile == "Y" or use_profile == "":
             break
         
-        # --- recursive ---
-        while True:
-            recursive = input("Recursive video search? [Y/n]: ").lower()
-            result = validate_bool(recursive)
-            if not result:
-                print("Inavlid input.")
-                continue
-            break
-        
         # --- resolution_x ---
         while True:
             resolution_x = input("Output resolution on the x-Axis: ")
             resolution_x = validate_int(resolution_x)
             if not resolution_x:
-                print("Inavlid input.")
                 continue
             break
         
@@ -82,7 +72,6 @@ def collect_informations():
             resolution_y = input("Output resolution on the y-Axis: ")
             resolution_y = validate_int(resolution_y)
             if not resolution_y:
-                print("Inavlid input.")
                 continue
             break
         
@@ -91,7 +80,6 @@ def collect_informations():
             video_quality = input("Video quality (choose between 0 and 51, the lower, the better): ")
             video_quality = validate_int(video_quality)
             if not video_quality:
-                print("Inavlid input.")
                 continue
             break
 
@@ -101,8 +89,9 @@ def collect_informations():
             if output_fps:
                 output_fps = validate_int(output_fps)
                 if not output_fps:
-                    print("Inavlid input.")
                     continue
+            else:
+                output_fps = 0
             break
         
         # --- video_codec ---
@@ -141,36 +130,36 @@ def collect_informations():
                 continue
             break
 
-        # --- output_audio_container ---
-        while True:
-            output_audio_container = input("Output audio container: ")
-            if not output_audio_container:
-                print("Inavlid input.")
-                continue
-            break
-
         # --- use_gpu ---
         while True:
             use_gpu = input("Render videos on GPU if available? [Y/n]: ").lower()
-            result = validate_bool(use_gpu)
-            if not result:
-                print("Inavlid input.")
-                continue
+            if use_gpu:
+                result = validate_bool(use_gpu)
+                if not result:
+                    print("Inavlid input.")
+                    continue
+                if use_gpu == "y":
+                    use_gpu = True
+                else:
+                    use_gpu = False
+            else:
+                use_gpu = True
             break
 
-        entries = [
-            {"resolution_x": resolution_x},
-            {"resolution_y": resolution_y},
-            {"video_quality": video_quality},
-            {"video_fps": output_fps},
-            {"use_gpu": use_gpu},
-            {"video_codec": video_codec},
-            {"audio_codec": audio_codec},
-            {"input_video_containers": containers},
-            {"output_video_container": output_video_container},
-            {"output_audio_container": output_audio_container}
-        ]
+        entries = {
+            "resolution_x": resolution_x,
+            "resolution_y": resolution_y,
+            "video_quality": video_quality,
+            "output_fps": output_fps,
+            "use_gpu": use_gpu,
+            "video_codec": video_codec,
+            "audio_codec": audio_codec,
+            "input_video_containers": containers,
+            "output_video_container": output_video_container,
+        }
+
         update_entries(entries)
+        break
     return input_folder_path, output_folder_path
 
 
@@ -252,10 +241,6 @@ def detect_gpu_vendor() -> dict:
             "vendor": "cpu",
             "gpu_names": []
         }
-
-    print("Detected GPUs:")
-    for gpu in gpu_names:
-        print(f" - {gpu}")
 
     normalized = [gpu.lower() for gpu in gpu_names]
 
