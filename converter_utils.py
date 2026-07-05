@@ -438,7 +438,7 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
     target_container = str(config.output_video_container).lower().lstrip(".")
     target_video_codec = _normalize_video_codec(getattr(config, "video_codec", None))
     target_audio_codec = _normalize_audio_codec(getattr(config, "audio_codec", None))
-    target_fps = _optional_int(getattr(config, "output_fps", None))
+    target_fps = _optional_int(getattr(config, "output_fps", None)) or None
     gpu_index = _optional_int(getattr(config, "gpu_index", None))
 
     if target_video_codec is None:
@@ -583,7 +583,7 @@ def run_ffmpeg_with_progress(cmd, input_path, env=None):
     process = subprocess.Popen(
         progress_cmd,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -592,10 +592,15 @@ def run_ffmpeg_with_progress(cmd, input_path, env=None):
     )
 
     progress_data = {}
+    output_lines = []
 
     for line in process.stdout:
         line = line.strip()
-        if not line or "=" not in line:
+        if not line:
+            continue
+        output_lines.append(line)
+
+        if "=" not in line:
             continue
 
         key, value = line.split("=", 1)
@@ -619,12 +624,11 @@ def run_ffmpeg_with_progress(cmd, input_path, env=None):
             if value == "end":
                 break
 
-    stderr_output = process.stderr.read()
     return_code = process.wait()
 
     if return_code != 0:
         print(f"ffmpeg failed with exit code {return_code}")
-        if stderr_output.strip():
-            print(stderr_output.strip())
+        if output_lines:
+            print("\n".join(output_lines[-40:]))
 
     return return_code
