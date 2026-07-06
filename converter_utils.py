@@ -355,15 +355,13 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
     video_stream = _first_stream(streams, "video")
     audio_stream = _first_stream(streams, "audio")
 
-    target_container = str(config.output_video_container).lower().lstrip(".")
+    target_container = output_path.suffix.lower().lstrip(".")
     target_video_codec = _normalize_video_codec(getattr(config, "video_codec", None))
     target_audio_codec = _normalize_audio_codec(getattr(config, "audio_codec", None))
+    target_resolution_x = _optional_int(getattr(config, "resolution_x", None)) or None
+    target_resolution_y = _optional_int(getattr(config, "resolution_y", None)) or None
     target_fps = _optional_int(getattr(config, "output_fps", None)) or None
     gpu_index = _optional_int(getattr(config, "gpu_index", None))
-
-    if target_video_codec is None:
-        print("Could not normalize target video codec.")
-        return None
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path)]
     run_env = None
@@ -377,26 +375,29 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
         input_height = int(video_stream["height"]) if video_stream.get("height") else None
         input_fps = _parse_fps(video_stream.get("r_frame_rate"))
 
-        if input_width != config.resolution_x or input_height != config.resolution_y:
-            video_filters.append(f"scale={config.resolution_x}:{config.resolution_y}")
-            video_needs_encode = True
+        effective_video_codec = target_video_codec if target_video_codec is not None else input_video_codec
+
+        if target_resolution_x is not None and target_resolution_y is not None:
+            if input_width != target_resolution_x or input_height != target_resolution_y:
+                video_filters.append(f"scale={target_resolution_x}:{target_resolution_y}")
+                video_needs_encode = True
 
         if target_fps is not None:
             if input_fps is None or round(input_fps) != target_fps:
                 video_needs_encode = True
                 cmd += ["-r", str(target_fps)]
 
-        if input_video_codec != target_video_codec:
+        if target_video_codec is not None and input_video_codec != target_video_codec:
             video_needs_encode = True
 
-        if not _container_supports(target_container, "video", target_video_codec):
-            print(f"Target container '{target_container}' does not support video codec '{target_video_codec}'.")
+        if not _container_supports(target_container, "video", effective_video_codec):
+            print(f"Target container '{target_container}' does not support video codec '{effective_video_codec}'.")
             return None
 
         if video_needs_encode:
-            video_encoder = _pick_video_encoder(target_video_codec, getattr(config, "use_gpu", "auto"), config.gpu_info, gpu_index)
+            video_encoder = _pick_video_encoder(effective_video_codec, getattr(config, "use_gpu", "auto"), config.gpu_info, gpu_index)
             if video_encoder is None:
-                print(f"No usable encoder found for video codec '{target_video_codec}'.")
+                print(f"No usable encoder found for video codec '{effective_video_codec}'.")
                 return None
 
             hwaccel_args, env_override = ([], None)

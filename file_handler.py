@@ -20,6 +20,7 @@ class Config(BaseModel):
     use_gpu: bool = True
     gpu_info: GPUInfo = Field(default_factory=GPUInfo)
     gpu_index: int = -1
+    configured: bool = False
 
 def save(config):
     global file
@@ -51,10 +52,7 @@ def update_entries(entries):
 
 def file_healthcheck():
     config = read()
-    if config.resolution_x and config.resolution_y and config.video_quality and config.input_video_containers and config.output_video_container and config.video_codec and config.audio_codec:
-        return True
-    else:
-        return False
+    return config.configured and bool(config.video_quality) and bool(config.input_video_containers)
 
 def collect_paths(folder_path):
     print("Collect paths.")

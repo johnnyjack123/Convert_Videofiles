@@ -61,19 +61,19 @@ def collect_informations():
         if use_profile == "y" or use_profile == "":
             break
 
-        # --- resolution_x ---
+        # --- resolution_x / resolution_y ---
         while True:
-            resolution_x = input("Output resolution on the x-Axis [e.g. 1920]: ")
-            resolution_x = validate_int(resolution_x)
+            resolution_x_raw = input("Output resolution on the x-Axis [e.g. 1920, leave empty to keep source resolution]: ")
+            if not resolution_x_raw:
+                resolution_x, resolution_y = 0, 0
+                break
+            resolution_x = validate_int(resolution_x_raw)
             if not resolution_x:
                 continue
-            break
-
-        # --- resolution_y ----
-        while True:
-            resolution_y = input("Output resolution on the y-Axis [e.g. 1080]: ")
-            resolution_y = validate_int(resolution_y)
+            resolution_y_raw = input("Output resolution on the y-Axis [e.g. 1080]: ")
+            resolution_y = validate_int(resolution_y_raw)
             if not resolution_y:
+                print("Invalid input.")
                 continue
             break
 
@@ -98,7 +98,9 @@ def collect_informations():
 
         # --- video_codec ---
         while True:
-            video_codec = input(f"Video codec [{VIDEO_CODEC_OPTIONS}]: ").strip().lower()
+            video_codec = input(f"Video codec [{VIDEO_CODEC_OPTIONS}, leave empty to keep source codec]: ").strip().lower()
+            if not video_codec:
+                break
             normalized_video_codec = VIDEO_CODEC_ALIASES.get(video_codec)
             if normalized_video_codec is None:
                 print("Invalid input.")
@@ -108,7 +110,9 @@ def collect_informations():
 
         # --- audio_codec ---
         while True:
-            audio_codec = input(f"Audio codec [{AUDIO_CODEC_OPTIONS}]: ").strip().lower()
+            audio_codec = input(f"Audio codec [{AUDIO_CODEC_OPTIONS}, leave empty to keep source codec]: ").strip().lower()
+            if not audio_codec:
+                break
             normalized_audio_codec = AUDIO_CODEC_ALIASES.get(audio_codec)
             if normalized_audio_codec is None:
                 print("Invalid input.")
@@ -131,7 +135,9 @@ def collect_informations():
 
         # --- output_video_container ---
         while True:
-            output_video_container = input(f"Output video container [{CONTAINER_OPTIONS}]: ").strip().lower().lstrip(".")
+            output_video_container = input(f"Output video container [{CONTAINER_OPTIONS}, leave empty to keep source container]: ").strip().lower().lstrip(".")
+            if not output_video_container:
+                break
             if output_video_container not in CONTAINER_COMPAT:
                 print(f"Invalid container. Choose from: {CONTAINER_OPTIONS}")
                 continue
@@ -163,6 +169,7 @@ def collect_informations():
             "audio_codec": audio_codec,
             "input_video_containers": containers,
             "output_video_container": output_video_container,
+            "configured": True,
         }
 
         update_entries(entries)
