@@ -296,10 +296,15 @@ def _pick_video_encoder(video_codec: str, use_gpu: str, gpu_info, gpu_index: int
         gpu_vendor_map = GPU_VIDEO_ENCODERS.get(vendor, {})
         gpu_encoder = gpu_vendor_map.get(video_codec)
 
-        if gpu_encoder:
-            if _ffmpeg_has_encoder(gpu_encoder):
-                return gpu_encoder
+        if not gpu_vendor_map:
+            print(f"GPU use requested, but detected vendor is '{vendor}' "
+                  f"(no NVIDIA/AMD GPU encoders available for this vendor).")
+        elif gpu_encoder is None:
+            print(f"GPU vendor '{vendor}' has no mapped encoder for codec '{video_codec}'.")
+        elif not _ffmpeg_has_encoder(gpu_encoder):
             print(f"GPU encoder '{gpu_encoder}' is not available in this ffmpeg build.")
+        else:
+            return gpu_encoder
 
         cpu_encoder = CPU_VIDEO_ENCODERS.get(video_codec)
         if cpu_encoder:
@@ -362,6 +367,8 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
     target_resolution_y = _optional_int(getattr(config, "resolution_y", None)) or None
     target_fps = _optional_int(getattr(config, "output_fps", None)) or None
     gpu_index = _optional_int(getattr(config, "gpu_index", None))
+    # HIER: Gewünschtes Pixelformat aus der Config laden
+    target_pix_fmt = getattr(config, "pix_fmt", None) 
 
     cmd = ["ffmpeg", "-y", "-i", str(input_path)]
     run_env = None
@@ -374,6 +381,8 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
         input_width = int(video_stream["width"]) if video_stream.get("width") else None
         input_height = int(video_stream["height"]) if video_stream.get("height") else None
         input_fps = _parse_fps(video_stream.get("r_frame_rate"))
+        # HIER: Aktuelles Pixelformat der Videodatei auslesen (z.B. yuv422p10le)
+        input_pix_fmt = video_stream.get("pix_fmt", "")
 
         effective_video_codec = target_video_codec if target_video_codec is not None else input_video_codec
 
@@ -388,6 +397,13 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
                 cmd += ["-r", str(target_fps)]
 
         if target_video_codec is not None and input_video_codec != target_video_codec:
+            video_needs_encode = True
+
+        # If the user requested a specific pixel format and it differs from the
+        # source, force a re-encode. NOTE: this must be an exact comparison, not
+        # a substring check ("yuv420p" is a *substring* of "yuv420p10le", so
+        # "in" would wrongly think they already match).
+        if target_pix_fmt and target_pix_fmt != input_pix_fmt:
             video_needs_encode = True
 
         if not _container_supports(target_container, "video", effective_video_codec):
@@ -409,6 +425,13 @@ def build_ffmpeg_command(config, input_path: str | Path, output_path: str | Path
                 run_env = env_override
 
             cmd += ["-c:v", video_encoder]
+
+            # =====================================================================
+            # NEU: Das gewünschte Pixel-Format an den FFmpeg-Befehl anfügen
+            # =====================================================================
+            if target_pix_fmt:
+                cmd += ["-pix_fmt", target_pix_fmt]
+            # =====================================================================
 
             if video_encoder in {"libx264", "libx265"}:
                 cmd += ["-crf", str(config.video_quality), "-preset", "medium"]

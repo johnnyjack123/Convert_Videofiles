@@ -143,6 +143,30 @@ def collect_informations():
                 continue
             break
 
+
+
+        # --- pix_fmt (pixel format / chroma subsampling) ---
+        while True:
+            print("\nPixel format (chroma subsampling / color depth):")
+            print("[1] yuv420p - 8-bit, most compatible (plays everywhere: phones, browsers, TVs)")
+            print("[2] yuv422p - higher chroma quality, better for editing, less universally supported")
+            print("[3] Keep source pixel format as-is (no forced conversion)")
+            pix_fmt_choice = input("Your choice [default is 1]: ").strip()
+
+            if pix_fmt_choice == "1" or pix_fmt_choice == "":
+                pix_fmt = "yuv420p"
+                break
+            elif pix_fmt_choice == "2":
+                pix_fmt = "yuv422p"
+                break
+            elif pix_fmt_choice == "3":
+                pix_fmt = ""  # Empty means: leave it up to the source, no forced re-encode for this
+                break
+            else:
+                print("Invalid input. Please choose 1, 2 or 3.")
+                continue
+
+
         # --- use_gpu ---
         while True:
             use_gpu = input("Render videos on GPU if available? [Y/n]: ").lower()
@@ -169,6 +193,7 @@ def collect_informations():
             "audio_codec": audio_codec,
             "input_video_containers": containers,
             "output_video_container": output_video_container,
+            "pix_fmt": pix_fmt, #ERGÄNZUNG FARBTIEFE
             "configured": True,
         }
 

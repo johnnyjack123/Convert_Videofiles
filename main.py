@@ -11,13 +11,33 @@ def start_program():
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", action="store_true")
+    parser.add_argument("--regpu", action="store_true",
+                         help="Force re-detection of the GPU vendor "
+                              "(useful if the app is stuck on CPU despite "
+                              "having a working NVIDIA/AMD GPU).")
 
     args = parser.parse_args()
     return args
 
-def setup_gpu():
+def _looks_like_dedicated_gpu(gpu_names):
+    return any(("nvidia" in n.lower() or "amd" in n.lower() or "radeon" in n.lower()) for n in gpu_names)
+
+def setup_gpu(force=False):
     config = read()
-    if config.gpu_index == -1:
+
+    # Auto-heal: if a dedicated GPU is physically present but the stored
+    # vendor is still "cpu" (e.g. detection failed once, ffmpeg was missing
+    # nvenc/amf support at that time, etc.), re-run detection instead of
+    # being stuck on CPU forever.
+    stale_cpu_fallback = (
+        config.gpu_info.vendor == "cpu"
+        and _looks_like_dedicated_gpu(config.gpu_info.gpu_names)
+    )
+
+    if config.gpu_index == -1 or force or stale_cpu_fallback:
+        if stale_cpu_fallback and not force:
+            print("A dedicated GPU was found but is currently marked as unusable "
+                  "(vendor='cpu'). Re-checking GPU support...")
         gpu_info = detect_gpu_vendor()
         gpu_list = gpu_info["gpu_names"]
         gpu_number = len(gpu_list)
@@ -57,7 +77,7 @@ def setup_program():
     if args.config:
         print_config()
         return False
-    setup_gpu()
+    setup_gpu(force=args.regpu)
     return True
 
 result = setup_program()

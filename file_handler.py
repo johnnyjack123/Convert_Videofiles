@@ -21,6 +21,7 @@ class Config(BaseModel):
     gpu_info: GPUInfo = Field(default_factory=GPUInfo)
     gpu_index: int = -1
     configured: bool = False
+    pix_fmt: str = ""
 
 def save(config):
     global file
